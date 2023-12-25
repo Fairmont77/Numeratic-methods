@@ -1,88 +1,75 @@
 import numpy as np
 
-def gauss_elimination_with_pivoting(A, b):
-    n = len(A)
-    M = A.copy()
-    P = np.eye(n)
-    x = np.zeros(n)
+class GEPP():
+    def __init__(self, A, b, doPricing=True):
+        self.A = A
+        self.b = b
+        self.doPricing = doPricing
+        self.n = len(self.A)
+        self.x = np.zeros(self.n)
+        self.P = np.eye(self.n)
 
-    # Прямий хід
-    for i in range(n):
-        # Вибір головного елемента
-        max_index = np.argmax(abs(M[i:, i])) + i
-        if i != max_index:
-            M[[i, max_index]] = M[[max_index, i]]
-            P[[i, max_index]] = P[[max_index, i]]
-            b[i], b[max_index] = b[max_index], b[i]
+        self._validate_input()
+        self._elimination()
+        self._backsub()
 
-        # Вилучення елементів нижче діагоналі
-        for j in range(i+1, n):
-            ratio = M[j][i]/M[i][i]
-            for k in range(i, n):
-                M[j][k] -= ratio * M[i][k]
-            b[j] -= ratio * b[i]
+    def jacobi_method(self, tolerance=1e-10, max_iterations=1000):
+        D = np.diag(self.A)
+        R = self.A - np.diagflat(D)
+        x = np.zeros_like(self.b)
 
-    # Зворотній хід
-    for i in range(n-1, -1, -1):
-        x[i] = b[i]
-        for j in range(i+1, n):
-            x[i] -= M[i][j] * x[j]
-        x[i] /= M[i][i]
+        for iteration in range(max_iterations):
+            x_new = (self.b - np.dot(R, x)) / D
+            diff = np.linalg.norm(x_new - x, np.inf)
+            if diff < tolerance:
+                return x_new
+            x = x_new
+        return x
 
-    return P, M, x
+    def _validate_input(self):
+        if self.b.size != self.n:
+            raise ValueError("Invalid argument: incompatible sizes between A & b.", self.b.size, self.n)
 
-def jacobi_method(A, b, tolerance=1e-10, max_iterations=1000):
-    n = len(A)
-    x = np.zeros_like(b)
-    D = np.diag(A)
-    R = A - np.diagflat(D)
+    def _elimination(self):
+        for k in range(self.n - 1):
+            if self.doPricing:
+                maxindex = abs(self.A[k:, k]).argmax() + k
+                if self.A[maxindex, k] == 0:
+                    raise ValueError("Matrix is singular.")
+                if maxindex != k:
+                    self.A[[k, maxindex]] = self.A[[maxindex, k]]
+                    self.b[[k, maxindex]] = self.b[[maxindex, k]]
+                    self.P[[k, maxindex]] = self.P[[maxindex, k]]  # Оновлення матриці P
+            pivot = self.A[k, k]
+            self.A[k] /= pivot
+            self.b[k] /= pivot
 
-    for iteration in range(max_iterations):
-        x_new = (b - np.dot(R, x)) / D
-        diff = np.linalg.norm(x_new - x, np.inf)
-
-        if iteration == 0 or iteration == max_iterations - 1:
-            print(f"Iteration {iteration+1}, Norm of difference: {diff}")
-
-        if diff < tolerance:
-            return x_new
-        x = x_new
-
-    return x
+            for row in range(k + 1, self.n):
+                multiplier = self.A[row, k] / self.A[k, k]
+                self.A[row, k:] -= multiplier * self.A[k, k:]
+                self.b[row] -= multiplier * self.b[k]
 
 
-def is_strictly_diagonally_dominant(matrix):
-    n = matrix.shape[0]
 
-    for i in range(n):
-        diagonal_element = abs(matrix[i, i])
-        non_diagonal_sum = np.sum(np.abs(matrix[i, :])) - diagonal_element
+    def _backsub(self):
+        for k in range(self.n - 1, -1, -1):
+            self.x[k] = (self.b[k] - np.dot(self.A[k, k + 1:], self.x[k + 1:])) / self.A[k, k]
 
-        if diagonal_element <= non_diagonal_sum:
-            return False
+def main():
+    A = np.array([[3, 1, -2, -2],
+                  [2, -1, 2, 2],
+                  [2, 1, -1, -1],
+                  [1, 1, -3, 2]], dtype='float64')
 
-    return True
+    b = np.array([-2, 2, -1, -3], dtype='float64')
 
-# Оновлення матриці системи до 4x4 для перевірки збіжності методу Якобі
-A_4x4 = np.array([[10, 1, 1, 1],
-                  [1, 10, 1, 1],
-                  [1, 1, 10, 1],
-                  [1, 1, 1, 10]], dtype='float64')
+    GaussElimPiv = GEPP(np.copy(A), np.copy(b), doPricing=True)
+    print("Solution vector x:\n", GaussElimPiv.x)
+    print("Transformed matrix M:\n", GaussElimPiv.A)
+    print("Permutation matrix P:\n", GaussElimPiv.P)
 
-# Оновлення вектору вільних членів
-b_4x4 = np.array([14, 14, 14, 14], dtype='float64')
+    x_jacobi = GaussElimPiv.jacobi_method()
+    print("Solution vector x using Jacobi method:\n", x_jacobi)
 
-# Виконання методу Гауса з вибором головного по рядках
-P_4x4, M_4x4, x_gauss_4x4 = gauss_elimination_with_pivoting(A_4x4, b_4x4.copy())
-print("Метод Гауса з вибором головного елемента (4x4):")
-print("Матриця перестановок P:\n", P_4x4)
-print("Модифікована матриця M після прямого ходу:\n", M_4x4)
-print("Розв'язок системи:\n", x_gauss_4x4)
-
-# Виконання методу Якобі
-x_jacobi_4x4 = jacobi_method(A_4x4, b_4x4)
-print("\nМетод Якобі (4x4):")
-print("Розв'язок системи:\n", x_jacobi_4x4)
-
-result = is_strictly_diagonally_dominant(A_4x4)
-print("Умова строгої діагональної переваги виконується:", result)
+if __name__ == "__main__":
+    main()
